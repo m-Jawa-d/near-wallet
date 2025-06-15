@@ -1,9 +1,5 @@
-
+import WalletInterface from './components/WalletInterface';
 
 export default function Home() {
-  return (
-    <>
-    I want near wallet
-    </>
-  );
+  return <WalletInterface />;
 }
