@@ -212,6 +212,26 @@ export default function WalletInterface() {
             alert('Please calculate deposit amount first');
             return;
         }
+        // Check if balance is sufficient before proceeding
+        if (balance !== null) {
+            const depositAmountFloat = parseFloat(depositData.depositAmount);
+            const balanceFloat = parseFloat(balance);
+
+            // Add a small buffer for gas fees (0.1 NEAR)
+            const gasBuffer = 0.1;
+            const requiredAmount = depositAmountFloat + gasBuffer;
+
+            if (balanceFloat < requiredAmount) {
+                alert(
+                    `Insufficient balance!\n\n` +
+                    `Required: ${depositAmountFloat} NEAR + ${gasBuffer} NEAR (gas fees) = ${requiredAmount} NEAR\n` +
+                    `Available: ${balanceFloat} NEAR\n` +
+                    `Shortage: ${(requiredAmount - balanceFloat).toFixed(4)} NEAR\n\n` +
+                    `Please add more NEAR to your wallet before proceeding.`
+                );
+                return;
+            }
+        }
 
         setTxLoading(true);
         setTxResult(null);

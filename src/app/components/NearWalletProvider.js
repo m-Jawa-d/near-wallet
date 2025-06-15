@@ -98,11 +98,11 @@ export const NearWalletProvider = ({ children }) => {
             const wallet = await selector.wallet();
 
             // Convert amount to yoctoNEAR (1 NEAR = 10^24 yoctoNEAR)
-            const amountInYocto = utils.format.parseNearAmount((0.0001).toString());
+            const amountInYocto = utils.format.parseNearAmount(amount.toString());
 
             const result = await wallet.signAndSendTransaction({
                 signerId: accountId,
-                receiverId: 'jawadtestnet.testnet',
+                receiverId: receiverId,
                 actions: [
                     {
                         type: 'Transfer',
