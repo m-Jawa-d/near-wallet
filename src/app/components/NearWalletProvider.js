@@ -27,8 +27,8 @@ export const NearWalletProvider = ({ children }) => {
     const [accountId, setAccountId] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    const NETWORK_ID = process.env.NEXT_PUBLIC_NETWORK_ID || 'testnet'; // Change to 'mainnet' for production
-    const CONTRACT_ID = process.env.NEXT_PUBLIC_MPC_CONTRACT || 'hello.near-examples.testnet'; // Example contract
+    const NETWORK_ID = process.env.NEXT_PUBLIC_NETWORK_ID ; // Change to 'mainnet' for production
+    // const CONTRACT_ID = process.env.NEXT_PUBLIC_MPC_CONTRACT ; // Example contract
 
     useEffect(() => {
         const init = async () => {
@@ -44,7 +44,7 @@ export const NearWalletProvider = ({ children }) => {
                 });
 
                 const _modal = setupModal(_selector, {
-                    contractId: CONTRACT_ID,
+                    // contractId: CONTRACT_ID,
                 });
 
                 const state = _selector.store.getState();
@@ -175,7 +175,7 @@ export const NearWalletProvider = ({ children }) => {
             const provider = new providers.JsonRpcProvider({
                 url: NETWORK_ID === 'mainnet'
                     ? 'https://rpc.mainnet.near.org'
-                    : 'https://rpc.testnet.near.org'
+                    : 'https://convincing-winter-sky.near-testnet.quiknode.pro/6da9a1620c12ff51aeaf0f190d8b27b0ea4b6665'
             });
 
             const account = await provider.query({

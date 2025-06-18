@@ -34,7 +34,8 @@ export default function WalletInterface() {
             getBalance(accountId).then(setBalance);
         }
     }, [accountId, getBalance]);
-
+    
+    console.log('NETWORK_ID:',11111, process.env.NEXT_PUBLIC_NETWORK_ID)
     // Restore deposit data from sessionStorage on component mount
     useEffect(() => {
         if (typeof window !== 'undefined') {
