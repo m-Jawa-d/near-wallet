@@ -119,7 +119,6 @@ export const NearWalletProvider = ({ children }) => {
             throw error;
         }
     };
-
     // const signMessage = async (message) => {
     //     if (!selector || !accountId) {
     //         throw new Error('Wallet not connected');
