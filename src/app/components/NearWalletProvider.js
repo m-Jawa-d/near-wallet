@@ -28,7 +28,7 @@ export const NearWalletProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     const NETWORK_ID = process.env.NEXT_PUBLIC_NETWORK_ID ; // Change to 'mainnet' for production
-    // const CONTRACT_ID = process.env.NEXT_PUBLIC_MPC_CONTRACT ; // Example contract
+    const CONTRACT_ID = process.env.NEXT_PUBLIC_MPC_CONTRACT ; // Example contract
 
     useEffect(() => {
         const init = async () => {
@@ -44,7 +44,7 @@ export const NearWalletProvider = ({ children }) => {
                 });
 
                 const _modal = setupModal(_selector, {
-                    // contractId: CONTRACT_ID,
+                    contractId: CONTRACT_ID,
                 });
 
                 const state = _selector.store.getState();
@@ -144,21 +144,23 @@ export const NearWalletProvider = ({ children }) => {
     //         throw error;
     //     }
     // };
-    const signMessage = async (message) => {
+    const signMessage = async (message, bufferNonce) => {
         if (!selector || !accountId) {
             throw new Error('Wallet not connected');
         }
 
         try {
             const wallet = await selector.wallet();
-console.log('message', message);
-
+            // // Convert hex string to buffer (remove '0x' prefix first)
+            // const hex = message.startsWith('0x') ? message.slice(2) : message;
+            // const nonce = Buffer.from(hex, 'hex');
+            // console.log('message', message, bufferNonce, nonce);
             // Pass the message as a string, not as bytes
             // The wallet selector will handle the conversion internally
             const signature = await wallet.signMessage({
                 message: message, // Keep as string
                 recipient: accountId,
-                nonce: Buffer.from(crypto.getRandomValues(new Uint8Array(32))),
+                nonce: Buffer.from(bufferNonce, 'hex') , // Buffer.from(crypto.getRandomValues(new Uint8Array(32))),
             });
             console.log(signature, 'signMessagesignMessagesignMessage');
 
