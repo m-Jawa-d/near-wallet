@@ -151,6 +151,7 @@ export const NearWalletProvider = ({ children }) => {
 
         try {
             const wallet = await selector.wallet();
+console.log('message', message);
 
             // Pass the message as a string, not as bytes
             // The wallet selector will handle the conversion internally
