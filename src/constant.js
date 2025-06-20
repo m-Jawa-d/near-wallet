@@ -256,3 +256,101 @@ export const styles = {
         lineHeight: '1.6'
     }
 };
+export const styles_verify = {
+    container: {
+        marginTop: '20px',
+        padding: '20px',
+        background: '#1a1a1a',
+        borderRadius: '8px',
+        border: '1px solid #333'
+    },
+    title: {
+        fontSize: '18px',
+        fontWeight: 'bold',
+        marginBottom: '16px',
+        color: '#fff'
+    },
+    button: {
+        background: '#0066ff',
+        color: 'white',
+        border: 'none',
+        padding: '10px 20px',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        fontSize: '16px',
+        transition: 'all 0.3s ease',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '8px'
+    },
+    buttonDisabled: {
+        opacity: 0.5,
+        cursor: 'not-allowed'
+    },
+    loadingSpinner: {
+        width: '16px',
+        height: '16px',
+        border: '2px solid #ffffff30',
+        borderTopColor: '#ffffff',
+        borderRadius: '50%',
+        animation: 'spin 0.6s linear infinite'
+    },
+    resultContainer: {
+        marginTop: '16px',
+        padding: '16px',
+        borderRadius: '6px',
+        fontSize: '14px'
+    },
+    successContainer: {
+        background: '#0d4d0d',
+        border: '1px solid #0f6e0f'
+    },
+    failedContainer: {
+        background: '#4d0d0d',
+        border: '1px solid #6e0f0f'
+    },
+    errorContainer: {
+        background: '#4d4d0d',
+        border: '1px solid #6e6e0f'
+    },
+    label: {
+        color: '#888',
+        fontSize: '12px',
+        textTransform: 'uppercase',
+        marginBottom: '4px'
+    },
+    value: {
+        color: '#fff',
+        marginBottom: '12px',
+        wordBreak: 'break-all'
+    },
+    statusIcon: {
+        marginRight: '8px',
+        fontSize: '20px'
+    },
+    detailsGrid: {
+        display: 'grid',
+        gap: '12px',
+        marginTop: '16px'
+    },
+    detailItem: {
+        display: 'flex',
+        justifyContent: 'space-between',
+        padding: '8px 12px',
+        background: '#0d0d0d',
+        borderRadius: '4px'
+    },
+    detailLabel: {
+        color: '#888'
+    },
+    detailValue: {
+        color: '#fff',
+        fontWeight: 'bold'
+    },
+    checkmark: {
+        color: '#4ade80'
+    },
+    cross: {
+        color: '#ef4444'
+    }
+};

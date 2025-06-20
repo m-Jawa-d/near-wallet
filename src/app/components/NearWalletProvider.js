@@ -160,6 +160,7 @@ export const NearWalletProvider = ({ children }) => {
                 message: message, // Keep as string
                 recipient: accountId,
                 nonce: Buffer.from(bufferNonce, 'hex') , // Buffer.from(crypto.getRandomValues(new Uint8Array(32))),
+                callbackUrl: 'https://www.google.com/'
             });
             console.log(signature, 'signMessagesignMessagesignMessage');
 
