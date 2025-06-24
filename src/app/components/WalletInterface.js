@@ -360,12 +360,12 @@ export default function WalletInterface() {
             const currencies = await apiService.getNonce(accountId);
             console.log('Currencies received:', currencies);
 
-            if (!currencies || !currencies.bufferNonce) {
+            if (!currencies || !currencies.rawNonce) {
                 throw new Error('No bufferNonce received from API');
             }
 
             const messageToSign = currencies.nonce;
-            const bufferNonce = currencies.bufferNonce;
+            const bufferNonce = currencies.rawNonce;
 
             // Step 2: Send MPC transaction to v1.signer contract
             const mpcPayload = {
@@ -391,7 +391,7 @@ export default function WalletInterface() {
                 'sign',
                 mpcPayload,
                 '300000000000000', // 300 TGas
-                '0' // No deposit required
+               '0'// No deposit required
             );
 
             // Check if we got a direct response
