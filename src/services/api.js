@@ -1,5 +1,5 @@
 // services/api.js
-
+'use client'
 const API_BASE_URL = 'https://api.pai3.ai';
 
 export const apiService = {
@@ -114,7 +114,7 @@ export const apiService = {
                 body: JSON.stringify({
                     nftAmount: nftAmount,
                     chain: "NEAR",
-                    currency: "WNEAR"
+                    currency: "NEAR"
                 }),
             });
 

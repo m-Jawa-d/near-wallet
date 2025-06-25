@@ -7,7 +7,6 @@ import { setupHereWallet } from '@near-wallet-selector/here-wallet';
 import { setupMeteorWallet } from '@near-wallet-selector/meteor-wallet';
 import { setupModal } from '@near-wallet-selector/modal-ui';
 import { providers, utils } from 'near-api-js';
-import BN from 'bn.js';
 
 const NearWalletContext = createContext();
 // Import the required CSS for the modal UI
