@@ -39,9 +39,17 @@ export default function WalletInterface() {
     const [tokenResult, setTokenResult] = useState(null);
     const [currentWallet, setCurrentWallet] = useState(null);
     const [mpcTxHash, setMpcTxHash] = useState(null);
+    const [accessToken, setAccessToken] = useState(localStorage.getItem('accessToken'));
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
 
     // Keep track of pending operations
     const pendingOperationRef = useRef(null);
+
+    // Check if user is logged in on component mount
+    useEffect(() => {
+        const token = localStorage.getItem('accessToken');
+        setIsLoggedIn(!!token);
+    }, []);
 
     useEffect(() => {
         if (accountId) {
@@ -144,9 +152,12 @@ export default function WalletInterface() {
                 accountId,
                 mpcData.nonce,
                 mpcData.signature,
-                txHash // Use the actual transaction hash
+                txHash, // Use the actual transaction hash
+                mpcData.publicKey || null
             );
             setTokenResult(tokenResponse);
+            setIsLoggedIn(true);
+            setAccessToken(tokenResponse.accessToken);
             console.log('Token received:', tokenResponse);
 
             setSignResult({
@@ -237,10 +248,16 @@ export default function WalletInterface() {
                 const tokenResponse = await apiService.getToken(
                     accountId,
                     currencies.nonce,
-                    urlData.signature
+                    urlData.signature,
+                    '' // Empty string for mpcTxHash when no MPC verification required
                 );
-                setTokenResult(tokenResponse);
-                console.log('Token received:', tokenResponse);
+                if (tokenResponse) {
+                    setAccessToken(tokenResponse.accessToken);
+                    setIsLoggedIn(true);
+                    localStorage.setItem('accessToken', tokenResponse.accessToken);
+                    setTokenResult(tokenResponse);
+                    console.log('Token received:', tokenResponse.accessToken);
+                }
             } catch (tokenError) {
                 console.error('Token request failed:', tokenError);
                 alert(`Signature successful but token request failed: ${tokenError.message}`);
@@ -295,9 +312,12 @@ export default function WalletInterface() {
         }
     };
 
+    // Auto-calculate deposit when user is logged in
     useEffect(() => {
-        handleCalculateDeposit()
-    }, [])
+        if (isLoggedIn && localStorage.getItem('accessToken')) {
+            handleCalculateDeposit();
+        }
+    }, [isLoggedIn]);
 
     const handleSendTransaction = async () => {
         if (!depositData) {
@@ -356,22 +376,78 @@ export default function WalletInterface() {
         pendingOperationRef.current = 'signing';
 
         try {
-            // Step 1: Get nonce and bufferNonce from API
+            // Step 1: Get nonce and check mpcVerificationRequired
             const currencies = await apiService.getNonce(accountId);
             console.log('Currencies received:', currencies);
 
-            if (!currencies || !currencies.rawNonce) {
-                throw new Error('No bufferNonce received from API');
+            if (!currencies || !currencies.nonce) {
+                throw new Error('No nonce received from API');
             }
 
             const messageToSign = currencies.nonce;
             const bufferNonce = currencies.rawNonce;
+            // Check if MPC verification is required
+            if (!currencies.mpcVerificationRequired) {
+                console.log('MPC verification not required, proceeding with simple signature');
+
+                // Simple signature flow without MPC transaction
+                try {
+                    const sign = await signMessage(messageToSign, bufferNonce);
+                    console.log('Signature received:', sign);
+
+                    // Call token API with empty mpcTxHash
+                    const tokenResponse = await apiService.getToken(
+                        accountId,
+                        messageToSign,
+                        sign.signature,
+                        '', // Empty string for mpcTxHash
+                        sign?.publicKey
+                    );
+
+                    if (tokenResponse) {
+                        setAccessToken(tokenResponse.accessToken);
+                        setIsLoggedIn(true);
+                        localStorage.setItem('accessToken', tokenResponse.accessToken);
+                        setTokenResult(tokenResponse);
+                        console.log('Token received:', tokenResponse);
+
+                        setSignResult({
+                            message: messageToSign,
+                            signature: {
+                                signature: sign.signature,
+                                publicKey: sign?.publicKey || 'N/A',
+                                accountId: accountId
+                            },
+                            currencies: currencies,
+                            mpcTxHash: null
+                        });
+                    }
+                } catch (signError) {
+                    console.error('Simple signature error:', signError);
+                    alert(`Signature failed: ${signError.message}`);
+                }
+
+                setSignLoading(false);
+                return;
+            }
+
+            // MPC verification required - proceed with MPC transaction
+            console.log('MPC verification required, proceeding with MPC transaction');
+
+            if (!currencies.rawNonce) {
+                throw new Error('No rawNonce received from API for MPC verification');
+            }
+
+          
+            const sign = await signMessage(messageToSign, bufferNonce);
 
             // Step 2: Send MPC transaction to v1.signer contract
             const mpcPayload = {
-                path: "ethereum-1",
-                payload: bufferNonce, // Use the bufferNonce array directly
-                key_version: "0"
+                request: {
+                    path: "ethereum-1",
+                    payload: currencies.rawNonce, // Use the bufferNonce array directly
+                    key_version: 0
+                }
             };
 
             console.log('Sending MPC transaction with payload:', mpcPayload);
@@ -380,9 +456,9 @@ export default function WalletInterface() {
             if (typeof window !== 'undefined') {
                 sessionStorage.setItem('pendingMpcData', JSON.stringify({
                     nonce: messageToSign,
-                    signature: 'pending', // Will be replaced after transaction
+                    signature: sign.signature,
                     currencies: currencies,
-                    publicKey: null
+                    publicKey: sign?.publicKey
                 }));
             }
 
@@ -391,16 +467,18 @@ export default function WalletInterface() {
                 'sign',
                 mpcPayload,
                 '300000000000000', // 300 TGas
-               '0'// No deposit required
+                '1000000000000000000' // No deposit required            
             );
 
             // Check if we got a direct response
             if (result && result.transaction && result.transaction.hash) {
                 console.log('Direct MPC transaction response received:', result);
+
                 await handleMpcTransactionResponse(result.transaction.hash, {
                     nonce: messageToSign,
-                    signature: 'mpc_signature', // Placeholder
-                    currencies: currencies
+                    signature: sign.signature,
+                    currencies: currencies,
+                    publicKey: sign?.publicKey
                 });
             } else {
                 console.log('MPC transaction initiated, waiting for redirect response...');
@@ -408,8 +486,8 @@ export default function WalletInterface() {
             }
 
         } catch (error) {
-            console.error('MPC signing error:', error);
-            alert(`MPC signing failed: ${error.message}`);
+            console.error('Authentication error:', error);
+            alert(`Authentication failed: ${error.message}`);
             setSignLoading(false);
             pendingOperationRef.current = null;
 
@@ -417,6 +495,23 @@ export default function WalletInterface() {
             if (typeof window !== 'undefined') {
                 sessionStorage.removeItem('pendingMpcData');
             }
+        }
+    };
+
+    const handleLogout = () => {
+        localStorage.removeItem('accessToken');
+        setAccessToken(null);
+        setIsLoggedIn(false);
+        setTokenResult(null);
+        setSignResult(null);
+        setDepositData(null);
+        setIsCalculated(false);
+        setTxResult(null);
+        setHashSubmissionResult(null);
+
+        // Clear any stored deposit data
+        if (typeof window !== 'undefined') {
+            sessionStorage.removeItem('pendingDepositData');
         }
     };
 
@@ -487,225 +582,245 @@ export default function WalletInterface() {
                                 {balance ? `${balance} NEAR` : 'Loading...'}
                             </span>
                         </div>
-                        <button
-                            onClick={disconnectWallet}
-                            style={styles.disconnectButton}
-                        >
-                            Disconnect Wallet
-                        </button>
+                        <div style={styles.infoRow}>
+                            <span style={styles.label}>Login Status</span>
+                            <span style={styles.value}>
+                                {isLoggedIn ? 'Logged In' : 'Not Logged In'}
+                            </span>
+                        </div>
+                        <div style={styles.buttonGroup}>
+                            <button
+                                onClick={disconnectWallet}
+                                style={styles.disconnectButton}
+                            >
+                                Disconnect Wallet
+                            </button>
+                            {isLoggedIn && (
+                                <button
+                                    onClick={handleLogout}
+                                    style={{ ...styles.disconnectButton, marginLeft: '10px' }}
+                                >
+                                    Logout
+                                </button>
+                            )}
+                        </div>
                     </div>
 
-                    {/* NFT Deposit Transaction */}
-                    <div style={styles.card}>
-                        <h3 style={styles.cardTitle}>NFT Deposit Transaction</h3>
-
-                        {/* NFT Amount Counter */}
-                        <div style={styles.amountSelector}>
-                            <label style={styles.selectorLabel}>
-                                Select NFT Amount
-                            </label>
-                            <div style={styles.selectorContainer}>
-                                <button
-                                    onClick={() => handleNftAmountChange(Math.max(1, nftAmount - 1))}
-                                    style={styles.selectorButton}
-                                >
-                                    −
-                                </button>
-                                <span style={styles.amountDisplay}>
-                                    {nftAmount}
-                                </span>
-                                <button
-                                    onClick={() => handleNftAmountChange(nftAmount + 1)}
-                                    style={styles.selectorButton}
-                                >
-                                    +
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Deposit Details */}
-                        {depositData && isCalculated && (
-                            <div style={styles.depositDetails}>
-                                <h4 style={styles.depositTitle}>Deposit Details</h4>
-                                <div style={styles.depositItem}>
-                                    <span style={styles.label}>Intent ID</span>
-                                    <span style={styles.value}>{depositData.intentId}</span>
-                                </div>
-                                <div style={styles.depositItem}>
-                                    <span style={styles.label}>Exchange Rate</span>
-                                    <span style={styles.value}>{depositData.exchangeRate}</span>
-                                </div>
-                                <div style={styles.depositItem}>
-                                    <span style={styles.label}>Deposit Deadline</span>
-                                    <span style={styles.value}>{depositData.depositDeadline}</span>
-                                </div>
-                                <div style={styles.depositItem}>
-                                    <span style={styles.label}>Asset ID</span>
-                                    <span style={styles.value}>{depositData.assetId}</span>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Transaction Fields */}
-                        <div style={styles.inputGroup}>
-                            <label style={styles.inputLabel}>
-                                Recipient Account ID
-                            </label>
-                            <input
-                                type="text"
-                                value={isCalculated && depositData ? depositData.depositAddress : ''}
-                                disabled={true}
-                                placeholder="Address will appear after calculation"
-                                style={{
-                                    ...styles.input,
-                                    opacity: (isCalculated && depositData) ? 1 : 0.5
-                                }}
-                            />
-                        </div>
-                        <div style={styles.inputGroup}>
-                            <label style={styles.inputLabel}>
-                                Amount (NEAR)
-                            </label>
-                            <input
-                                type="text"
-                                value={isCalculated && depositData ? depositData.depositAmount : ''}
-                                disabled={true}
-                                placeholder="Amount will appear after calculation"
-                                style={{
-                                    ...styles.input,
-                                    opacity: (isCalculated && depositData) ? 1 : 0.5
-                                }}
-                            />
-                        </div>
-
-                        {/* Action Buttons */}
-                        {!isCalculated ? (
+                    {/* Show Sign Message UI when user is NOT logged in */}
+                    {!isLoggedIn && (
+                        <div style={styles.card}>
+                            <h3 style={styles.cardTitle}>Authentication Required</h3>
+                            <p style={styles.description}>
+                                Please authenticate to access the deposit functionality. This will fetch nonce from the API and handle the authentication process.
+                                {currentWallet && (
+                                    <span style={{ display: 'block', marginTop: '8px', fontSize: '14px', color: '#888' }}>
+                                        Using {currentWallet} wallet
+                                    </span>
+                                )}
+                            </p>
                             <button
-                                onClick={handleCalculateDeposit}
-                                disabled={calculateLoading}
+                                onClick={handleSignMessage}
+                                disabled={signLoading}
                                 style={{
                                     ...styles.buttonPrimary,
-                                    opacity: calculateLoading ? 0.5 : 1
+                                    opacity: signLoading ? 0.5 : 1
                                 }}
                             >
-                                {calculateLoading && <div style={styles.loadingSpinner}></div>}
-                                {calculateLoading ? 'Calculating...' : 'Calculate Deposit'}
+                                {signLoading && <div style={styles.loadingSpinner}></div>}
+                                {signLoading ? 'Processing Authentication...' : 'Sign In'}
                             </button>
-                        ) : (
-                            <div style={styles.buttonGroup}>
+
+                            {signResult && (
+                                <div style={styles.successAlert}>
+                                    <p style={styles.alertTitle}>Authentication Successful!</p>
+
+                                    {mpcTxHash && (
+                                        <div style={{ marginTop: '16px' }}>
+                                            <p style={{ ...styles.label, marginBottom: '8px' }}>MPC Transaction Hash:</p>
+                                            <div style={styles.codeBlock}>
+                                                {mpcTxHash}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <div style={{ marginTop: '16px' }}>
+                                        <p style={{ ...styles.label, marginBottom: '8px' }}>Signed Nonce:</p>
+                                        <div style={styles.codeBlock}>
+                                            {signResult.message}
+                                        </div>
+                                    </div>
+
+                                    <div style={{ marginTop: '16px' }}>
+                                        <p style={{ ...styles.label, marginBottom: '8px' }}>Available Currencies:</p>
+                                        <pre style={styles.codeBlock}>
+                                            {JSON.stringify(signResult.currencies, null, 2)}
+                                        </pre>
+                                    </div>
+
+                                    {tokenResult && (
+                                        <div style={{ marginTop: '16px', padding: '16px', background: '#0d4d0d', borderRadius: '8px' }}>
+                                            <p style={styles.alertTitle}>Token Retrieved Successfully!</p>
+                                            <pre style={styles.codeBlock}>
+                                                {JSON.stringify(tokenResult, null, 2)}
+                                            </pre>
+                                        </div>
+                                    )}
+
+                                    {/* Add the signature verification component here */}
+                                    <div style={{ marginTop: '20px' }}>
+                                        <SignatureVerificationComponent
+                                            signResult={signResult}
+                                            accountId={accountId}
+                                            networkId={NETWORK_ID}
+                                        />
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Show NFT Deposit Transaction UI when user IS logged in */}
+                    {isLoggedIn && (
+                        <div style={styles.card}>
+                            <h3 style={styles.cardTitle}>NFT Deposit Transaction</h3>
+
+                            {/* NFT Amount Counter */}
+                            <div style={styles.amountSelector}>
+                                <label style={styles.selectorLabel}>
+                                    Select NFT Amount
+                                </label>
+                                <div style={styles.selectorContainer}>
+                                    <button
+                                        onClick={() => handleNftAmountChange(Math.max(1, nftAmount - 1))}
+                                        style={styles.selectorButton}
+                                    >
+                                        −
+                                    </button>
+                                    <span style={styles.amountDisplay}>
+                                        {nftAmount}
+                                    </span>
+                                    <button
+                                        onClick={() => handleNftAmountChange(nftAmount + 1)}
+                                        style={styles.selectorButton}
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Deposit Details */}
+                            {depositData && isCalculated && (
+                                <div style={styles.depositDetails}>
+                                    <h4 style={styles.depositTitle}>Deposit Details</h4>
+                                    <div style={styles.depositItem}>
+                                        <span style={styles.label}>Intent ID</span>
+                                        <span style={styles.value}>{depositData.intentId}</span>
+                                    </div>
+                                    <div style={styles.depositItem}>
+                                        <span style={styles.label}>Exchange Rate</span>
+                                        <span style={styles.value}>{depositData.exchangeRate}</span>
+                                    </div>
+                                    <div style={styles.depositItem}>
+                                        <span style={styles.label}>Deposit Deadline</span>
+                                        <span style={styles.value}>{depositData.depositDeadline}</span>
+                                    </div>
+                                    <div style={styles.depositItem}>
+                                        <span style={styles.label}>Asset ID</span>
+                                        <span style={styles.value}>{depositData.assetId}</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Transaction Fields */}
+                            <div style={styles.inputGroup}>
+                                <label style={styles.inputLabel}>
+                                    Recipient Account ID
+                                </label>
+                                <input
+                                    type="text"
+                                    value={isCalculated && depositData ? depositData.depositAddress : ''}
+                                    disabled={true}
+                                    placeholder="Address will appear after calculation"
+                                    style={{
+                                        ...styles.input,
+                                        opacity: (isCalculated && depositData) ? 1 : 0.5
+                                    }}
+                                />
+                            </div>
+                            <div style={styles.inputGroup}>
+                                <label style={styles.inputLabel}>
+                                    Amount (NEAR)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={isCalculated && depositData ? depositData.depositAmount : ''}
+                                    disabled={true}
+                                    placeholder="Amount will appear after calculation"
+                                    style={{
+                                        ...styles.input,
+                                        opacity: (isCalculated && depositData) ? 1 : 0.5
+                                    }}
+                                />
+                            </div>
+
+                            {/* Action Buttons */}
+                            {!isCalculated ? (
                                 <button
                                     onClick={handleCalculateDeposit}
                                     disabled={calculateLoading}
                                     style={{
-                                        ...styles.buttonSecondary,
+                                        ...styles.buttonPrimary,
                                         opacity: calculateLoading ? 0.5 : 1
                                     }}
                                 >
                                     {calculateLoading && <div style={styles.loadingSpinner}></div>}
-                                    {calculateLoading ? 'Calculating...' : 'Recalculate'}
+                                    {calculateLoading ? 'Calculating...' : 'Calculate Deposit'}
                                 </button>
-                                <button
-                                    onClick={handleSendTransaction}
-                                    disabled={txLoading}
-                                    style={{
-                                        ...styles.buttonSuccess,
-                                        opacity: txLoading ? 0.5 : 1
-                                    }}
-                                >
-                                    {txLoading && <div style={styles.loadingSpinner}></div>}
-                                    {txLoading ? 'Processing...' : 'Transfer Amount'}
-                                </button>
-                            </div>
-                        )}
-
-                        {/* Transaction Result */}
-                        {txResult && (
-                            <div style={styles.successAlert}>
-                                <p style={styles.alertTitle}>Transaction Successful!</p>
-                                <p>Transaction Hash: <span style={styles.value}>{txResult.transaction?.hash}</span></p>
-
-                                {hashSubmissionResult && (
-                                    <div style={{ marginTop: '16px', padding: '16px', background: '#0d0d0d', borderRadius: '8px' }}>
-                                        <p style={styles.alertTitle}>Hash Submitted Successfully!</p>
-                                        <pre style={styles.codeBlock}>
-                                            {JSON.stringify(hashSubmissionResult, null, 2)}
-                                        </pre>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Sign Message */}
-                    <div style={styles.card}>
-                        <h3 style={styles.cardTitle}>MPC Sign Transaction</h3>
-                        <p style={styles.description}>
-                            This will fetch nonce from the API and send an MPC signing transaction to v1.signer contract.
-                            {currentWallet && (
-                                <span style={{ display: 'block', marginTop: '8px', fontSize: '14px', color: '#888' }}>
-                                    Using {currentWallet} wallet
-                                </span>
+                            ) : (
+                                <div style={styles.buttonGroup}>
+                                    <button
+                                        onClick={handleCalculateDeposit}
+                                        disabled={calculateLoading}
+                                        style={{
+                                            ...styles.buttonSecondary,
+                                            opacity: calculateLoading ? 0.5 : 1
+                                        }}
+                                    >
+                                        {calculateLoading && <div style={styles.loadingSpinner}></div>}
+                                        {calculateLoading ? 'Calculating...' : 'Recalculate'}
+                                    </button>
+                                    <button
+                                        onClick={handleSendTransaction}
+                                        disabled={txLoading}
+                                        style={{
+                                            ...styles.buttonSuccess,
+                                            opacity: txLoading ? 0.5 : 1
+                                        }}
+                                    >
+                                        {txLoading && <div style={styles.loadingSpinner}></div>}
+                                        {txLoading ? 'Processing...' : 'Transfer Amount'}
+                                    </button>
+                                </div>
                             )}
-                        </p>
-                        <button
-                            onClick={handleSignMessage}
-                            disabled={signLoading}
-                            style={{
-                                ...styles.buttonPrimary,
-                                opacity: signLoading ? 0.5 : 1
-                            }}
-                        >
-                            {signLoading && <div style={styles.loadingSpinner}></div>}
-                            {signLoading ? 'Processing MPC Transaction...' : 'Send MPC Sign Transaction'}
-                        </button>
 
-                        {signResult && (
-                            <div style={styles.successAlert}>
-                                <p style={styles.alertTitle}>MPC Transaction Successful!</p>
+                            {/* Transaction Result */}
+                            {txResult && (
+                                <div style={styles.successAlert}>
+                                    <p style={styles.alertTitle}>Transaction Successful!</p>
+                                    <p>Transaction Hash: <span style={styles.value}>{txResult.transaction?.hash}</span></p>
 
-                                {mpcTxHash && (
-                                    <div style={{ marginTop: '16px' }}>
-                                        <p style={{ ...styles.label, marginBottom: '8px' }}>MPC Transaction Hash:</p>
-                                        <div style={styles.codeBlock}>
-                                            {mpcTxHash}
+                                    {hashSubmissionResult && (
+                                        <div style={{ marginTop: '16px', padding: '16px', background: '#0d0d0d', borderRadius: '8px' }}>
+                                            <p style={styles.alertTitle}>Hash Submitted Successfully!</p>
+                                            <pre style={styles.codeBlock}>
+                                                {JSON.stringify(hashSubmissionResult, null, 2)}
+                                            </pre>
                                         </div>
-                                    </div>
-                                )}
-
-                                <div style={{ marginTop: '16px' }}>
-                                    <p style={{ ...styles.label, marginBottom: '8px' }}>Signed Nonce:</p>
-                                    <div style={styles.codeBlock}>
-                                        {signResult.message}
-                                    </div>
+                                    )}
                                 </div>
-
-                                <div style={{ marginTop: '16px' }}>
-                                    <p style={{ ...styles.label, marginBottom: '8px' }}>Available Currencies:</p>
-                                    <pre style={styles.codeBlock}>
-                                        {JSON.stringify(signResult.currencies, null, 2)}
-                                    </pre>
-                                </div>
-
-                                {tokenResult && (
-                                    <div style={{ marginTop: '16px', padding: '16px', background: '#0d4d0d', borderRadius: '8px' }}>
-                                        <p style={styles.alertTitle}>Token Retrieved Successfully!</p>
-                                        <pre style={styles.codeBlock}>
-                                            {JSON.stringify(tokenResult, null, 2)}
-                                        </pre>
-                                    </div>
-                                )}
-
-                                {/* Add the signature verification component here */}
-                                <div style={{ marginTop: '20px' }}>
-                                    <SignatureVerificationComponent
-                                        signResult={signResult}
-                                        accountId={accountId}
-                                        networkId={NETWORK_ID}
-                                    />
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                            )}
+                        </div>
+                    )}
                 </>
             )}
         </div>

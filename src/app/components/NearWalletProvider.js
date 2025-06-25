@@ -82,12 +82,14 @@ export const NearWalletProvider = ({ children }) => {
     };
 
     const disconnectWallet = async () => {
+      
         if (!selector) return;
 
         const wallet = await selector.wallet();
         await wallet.signOut();
         setAccountId(null);
         setAccounts([]);
+        localStorage.removeItem('accessToken');
     };
 
     const sendTransaction = async (receiverId, amount) => {
