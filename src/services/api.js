@@ -93,11 +93,49 @@ export const apiService = {
     },
 
     /**
+     * Get available currencies for deposits
+     * @returns {Promise<Array>} Array of available currencies
+     */
+    async getCurrencies() {
+        try {
+            const bearerToken = localStorage.getItem('accessToken');
+
+            if (!bearerToken) {
+                throw new Error('Bearer token not found. Please login first.');
+            }
+
+            const response = await fetch(`${API_BASE_URL}/node-manager/v1/deposits/currencies`, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${bearerToken}`,
+                    'Content-Type': 'application/json',
+                },
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    // Token might be expired, clear it
+                    localStorage.removeItem('accessToken');
+                    throw new Error('Authentication failed. Please login again.');
+                }
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error('Error fetching currencies:', error);
+            throw new Error(`Failed to fetch currencies: ${error.message}`);
+        }
+    },
+
+    /**
      * Calculate deposit amount for NFTs
      * @param {number} nftAmount - Number of NFTs to deposit
+     * @param {string} currency - Selected currency token (e.g., 'NEAR', 'USDT', 'USDC')
      * @returns {Promise<Object>} Deposit calculation response
      */
-    async calculateDeposit(nftAmount) {
+    async calculateDeposit(nftAmount, currency = 'NEAR') {
         try {
             const bearerToken = localStorage.getItem('accessToken');
 
@@ -114,7 +152,7 @@ export const apiService = {
                 body: JSON.stringify({
                     nftAmount: nftAmount,
                     chain: "NEAR",
-                    currency: "NEAR"
+                    currency: currency
                 }),
             });
 
